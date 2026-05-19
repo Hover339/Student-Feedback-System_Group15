@@ -1,0 +1,15 @@
+# Testing/development only
+test_connection.php
+
+# Archives
+*.zip
+*.rar
+*.7z
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs
+*.log
