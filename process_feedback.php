@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     |--------------------------------------------------------------------------
     */
     $rateLimitSql = "SELECT COUNT(*) AS recent_count
-                     FROM feedback
+                     FROM app.feedback
                      WHERE user_id = ?
                      AND created_at >= DATEADD(MINUTE, -5, GETDATE())";
 
@@ -88,10 +88,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Encrypt sensitive feedback description before saving into SQL Server
     $encryptedDescription = encryptSensitiveData($description);
 
-    $insertSql = "INSERT INTO feedback 
-                  (user_id, title, description, category, type, status, created_at, updated_at)
-                  OUTPUT INSERTED.feedback_id
-                  VALUES (?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())";
+    /*
+    |--------------------------------------------------------------------------
+    | Insert Feedback
+    |--------------------------------------------------------------------------
+    | Important:
+    | app.feedback has database triggers, so we cannot use:
+    | OUTPUT INSERTED.feedback_id
+    |
+    | Instead, use INSERT then SELECT SCOPE_IDENTITY().
+    |--------------------------------------------------------------------------
+    */
+    $insertSql = "
+        INSERT INTO app.feedback 
+        (user_id, title, description, category, type, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+
+        SELECT SCOPE_IDENTITY() AS new_feedback_id;
+    ";
 
     $params = [
         $user_id,
@@ -104,8 +118,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $stmt = sqlsrv_query($conn, $insertSql, $params);
 
-    if ($stmt && ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_NUMERIC))) {
-        $new_feedback_id = intval($row[0]);
+    if ($stmt === false) {
+        http_response_code(500);
+        echo "Database Error: Failed to submit feedback.<br>";
+        echo "<pre>";
+        print_r(sqlsrv_errors());
+        echo "</pre>";
+        exit();
+    }
+
+    // Move to SELECT SCOPE_IDENTITY() result set
+    sqlsrv_next_result($stmt);
+
+    $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+
+    if ($row && isset($row['new_feedback_id'])) {
+        $new_feedback_id = intval($row['new_feedback_id']);
 
         logEvent(
             $conn,
@@ -117,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo "Success";
     } else {
         http_response_code(500);
-        echo "Database Error: Failed to submit feedback.";
+        echo "Database Error: Feedback inserted but feedback ID could not be retrieved.";
     }
 } else {
     http_response_code(405);

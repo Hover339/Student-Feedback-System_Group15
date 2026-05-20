@@ -29,7 +29,7 @@ $typeCounts = [
 | Total submissions
 |--------------------------------------------------------------------------
 */
-$totalSql = "SELECT COUNT(*) AS total FROM feedback";
+$totalSql = "SELECT COUNT(*) AS total FROM app.feedback";
 $totalResult = sqlsrv_query($conn, $totalSql);
 
 if ($totalResult) {
@@ -38,6 +38,12 @@ if ($totalResult) {
     if ($row) {
         $totalSubmissions = intval($row['total']);
     }
+} else {
+    echo "<h3>SQL Server Error while loading total submissions:</h3>";
+    echo "<pre>";
+    print_r(sqlsrv_errors());
+    echo "</pre>";
+    exit();
 }
 
 /*
@@ -45,7 +51,7 @@ if ($totalResult) {
 | Status breakdown
 |--------------------------------------------------------------------------
 */
-$statusSql = "SELECT status, COUNT(*) AS count FROM feedback GROUP BY status";
+$statusSql = "SELECT status, COUNT(*) AS count FROM app.feedback GROUP BY status";
 $statusResult = sqlsrv_query($conn, $statusSql);
 
 if ($statusResult) {
@@ -56,6 +62,12 @@ if ($statusResult) {
             $statusCounts[$status] = intval($row['count']);
         }
     }
+} else {
+    echo "<h3>SQL Server Error while loading status breakdown:</h3>";
+    echo "<pre>";
+    print_r(sqlsrv_errors());
+    echo "</pre>";
+    exit();
 }
 
 /*
@@ -63,13 +75,19 @@ if ($statusResult) {
 | Category breakdown
 |--------------------------------------------------------------------------
 */
-$categorySql = "SELECT category, COUNT(*) AS count FROM feedback GROUP BY category";
+$categorySql = "SELECT category, COUNT(*) AS count FROM app.feedback GROUP BY category";
 $categoryResult = sqlsrv_query($conn, $categorySql);
 
 if ($categoryResult) {
     while ($row = sqlsrv_fetch_array($categoryResult, SQLSRV_FETCH_ASSOC)) {
         $categoryCounts[$row['category']] = intval($row['count']);
     }
+} else {
+    echo "<h3>SQL Server Error while loading category breakdown:</h3>";
+    echo "<pre>";
+    print_r(sqlsrv_errors());
+    echo "</pre>";
+    exit();
 }
 
 /*
@@ -77,7 +95,7 @@ if ($categoryResult) {
 | Type breakdown
 |--------------------------------------------------------------------------
 */
-$typeSql = "SELECT type, COUNT(*) AS count FROM feedback GROUP BY type";
+$typeSql = "SELECT type, COUNT(*) AS count FROM app.feedback GROUP BY type";
 $typeResult = sqlsrv_query($conn, $typeSql);
 
 if ($typeResult) {
@@ -88,6 +106,12 @@ if ($typeResult) {
             $typeCounts[$type] = intval($row['count']);
         }
     }
+} else {
+    echo "<h3>SQL Server Error while loading type breakdown:</h3>";
+    echo "<pre>";
+    print_r(sqlsrv_errors());
+    echo "</pre>";
+    exit();
 }
 ?>
 

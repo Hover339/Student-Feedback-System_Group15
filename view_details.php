@@ -27,7 +27,7 @@ if ($feedback_id <= 0) {
 |--------------------------------------------------------------------------
 */
 $sql = "SELECT title, description, category, type, status, admin_response, created_at, updated_at
-        FROM feedback
+        FROM app.feedback
         WHERE feedback_id = ? AND user_id = ?";
 
 $params = [$feedback_id, $user_id];

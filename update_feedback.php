@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_id'], $_POST
 
         if ($feedback_id > 0 && in_array($new_status, $allowedStatuses, true)) {
             $selectSql = "SELECT status, admin_response 
-                          FROM feedback 
+                          FROM app.feedback 
                           WHERE feedback_id = ?";
 
             $selectStmt = sqlsrv_query($conn, $selectSql, [$feedback_id]);
@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_id'], $_POST
                 if ($needsUpdate) {
                     $db_response = ($new_response_plain === '') ? null : encryptSensitiveData($new_response_plain);
 
-                    $updateSql = "UPDATE feedback
+                    $updateSql = "UPDATE app.feedback
                                   SET status = ?, 
                                       admin_response = ?, 
                                       updated_at = GETDATE()
@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_id'], $_POST
 | Log admin viewing full feedback management list
 |--------------------------------------------------------------------------
 */
-$countSql = "SELECT COUNT(*) AS total FROM feedback";
+$countSql = "SELECT COUNT(*) AS total FROM app.feedback";
 $countStmt = sqlsrv_query($conn, $countSql);
 
 $totalFeedback = 0;
@@ -117,7 +117,7 @@ logEvent(
 $feedbackItems = [];
 
 $feedbackSql = "SELECT feedback_id, user_id, title, description, category, type, status, admin_response, created_at, updated_at
-                FROM feedback
+                FROM app.feedback
                 ORDER BY created_at DESC";
 
 $feedbackStmt = sqlsrv_query($conn, $feedbackSql);

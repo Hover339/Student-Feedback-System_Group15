@@ -2,6 +2,8 @@
 session_start();
 include 'db.php';
 
+$errorMessage = "";
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $name = trim($_POST['name']);
     $email = trim($_POST['email']);
@@ -10,33 +12,85 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     if (!validateCsrfToken($csrf_token)) {
         logEvent($conn, null, 'CSRF_FAILED', "Invalid CSRF token during registration attempt for: {$email}");
-        echo "<script>alert('Invalid request. Please refresh the page and try again.');</script>";
+        $errorMessage = "Invalid request. Please refresh the page and try again.";
     } elseif (strlen($plain_password) < 6) {
-        echo "<script>alert('Password must be at least 6 characters.');</script>";
+        $errorMessage = "Password must be at least 6 characters.";
     } else {
         $password = password_hash($plain_password, PASSWORD_DEFAULT);
 
-        $sql = "INSERT INTO users (full_name, email, password_hash, role)
-                OUTPUT INSERTED.user_id
-                VALUES (?, ?, ?, 'student')";
+        /*
+        |--------------------------------------------------------------------------
+        | Check if email already exists
+        |--------------------------------------------------------------------------
+        */
+        $checkSql = "SELECT user_id FROM app.users WHERE email = ?";
+        $checkStmt = sqlsrv_query($conn, $checkSql, [$email]);
 
-        $params = [$name, $email, $password];
+        if ($checkStmt === false) {
+            echo "<h3>SQL Server Error while checking email:</h3>";
+            echo "<pre>";
+            print_r(sqlsrv_errors());
+            echo "</pre>";
+            exit();
+        }
 
-        $stmt = sqlsrv_query($conn, $sql, $params);
+        $existingUser = sqlsrv_fetch_array($checkStmt, SQLSRV_FETCH_ASSOC);
 
-        if ($stmt && ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_NUMERIC))) {
-            $new_user_id = intval($row[0]);
-
-            logEvent(
-                $conn,
-                $new_user_id,
-                'USER_REGISTERED',
-                "New student account successfully created for: {$email}"
-            );
-
-            echo "<script>alert('Registration successful!'); window.location='login.php';</script>";
+        if ($existingUser) {
+            $errorMessage = "Email already exists. Please use another email.";
         } else {
-            echo "<script>alert('Error: Email may already exist.');</script>";
+            /*
+            |--------------------------------------------------------------------------
+            | Insert new student user
+            |--------------------------------------------------------------------------
+            | Important:
+            | We avoid OUTPUT INSERTED.user_id because app.users has database triggers.
+            | SQL Server does not allow OUTPUT without INTO on tables with enabled triggers.
+            |--------------------------------------------------------------------------
+            */
+            $insertSql = "
+                INSERT INTO app.users (full_name, email, password_hash, role)
+                VALUES (?, ?, ?, 'student');
+
+                SELECT SCOPE_IDENTITY() AS new_user_id;
+            ";
+
+            $params = [$name, $email, $password];
+
+            $stmt = sqlsrv_query($conn, $insertSql, $params);
+
+            if ($stmt === false) {
+                echo "<h3>SQL Server Error while registering user:</h3>";
+                echo "<pre>";
+                print_r(sqlsrv_errors());
+                echo "</pre>";
+                exit();
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Move to SELECT SCOPE_IDENTITY() result set
+            |--------------------------------------------------------------------------
+            */
+            sqlsrv_next_result($stmt);
+
+            $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+
+            if ($row && isset($row['new_user_id'])) {
+                $new_user_id = intval($row['new_user_id']);
+
+                logEvent(
+                    $conn,
+                    $new_user_id,
+                    'USER_REGISTERED',
+                    "New student account successfully created for: {$email}"
+                );
+
+                echo "<script>alert('Registration successful!'); window.location='login.php';</script>";
+                exit();
+            } else {
+                $errorMessage = "Registration failed. User was inserted but ID could not be retrieved.";
+            }
         }
     }
 }
@@ -103,6 +157,17 @@ $csrfToken = generateCsrfToken();
             font-size: 14px;
             margin: 12px 0 28px;
             line-height: 1.5;
+        }
+
+        .error-box {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 18px;
+            font-size: 14px;
+            text-align: center;
         }
 
         label {
@@ -200,6 +265,12 @@ $csrfToken = generateCsrfToken();
     <p class="subtitle">
         Register as a student to submit and track feedback securely.
     </p>
+
+    <?php if (!empty($errorMessage)): ?>
+        <div class="error-box">
+            <?php echo htmlspecialchars($errorMessage); ?>
+        </div>
+    <?php endif; ?>
 
     <form method="POST">
         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">

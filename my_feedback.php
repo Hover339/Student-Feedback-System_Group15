@@ -30,7 +30,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['delete_feedback_id'])
         logEvent($conn, $user_id, 'CSRF_FAILED', 'Invalid CSRF token during feedback deletion.');
         $message = "Invalid request. Please refresh the page and try again.";
     } else {
-        $checkSql = "SELECT title FROM feedback WHERE feedback_id = ? AND user_id = ?";
+        $checkSql = "SELECT title FROM app.feedback WHERE feedback_id = ? AND user_id = ?";
         $checkStmt = sqlsrv_query($conn, $checkSql, [$feedback_id, $user_id]);
 
         $feedback = null;
@@ -42,7 +42,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['delete_feedback_id'])
         if ($feedback) {
             $feedbackTitle = $feedback['title'];
 
-            $deleteSql = "DELETE FROM feedback WHERE feedback_id = ? AND user_id = ?";
+            $deleteSql = "DELETE FROM app.feedback WHERE feedback_id = ? AND user_id = ?";
             $deleteStmt = sqlsrv_query($conn, $deleteSql, [$feedback_id, $user_id]);
 
             if ($deleteStmt) {
@@ -97,7 +97,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['modify_feedback_id'])
         $message = "Title and description cannot be empty.";
     } else {
         // Check ownership and status before modifying
-        $checkSql = "SELECT title, status FROM feedback WHERE feedback_id = ? AND user_id = ?";
+        $checkSql = "SELECT title, status FROM app.feedback WHERE feedback_id = ? AND user_id = ?";
         $checkStmt = sqlsrv_query($conn, $checkSql, [$feedback_id, $user_id]);
 
         $feedback = null;
@@ -120,7 +120,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['modify_feedback_id'])
         } else {
             $encryptedDescription = encryptSensitiveData($new_description);
 
-            $updateSql = "UPDATE feedback
+            $updateSql = "UPDATE app.feedback
                           SET type = ?, 
                               category = ?, 
                               title = ?, 
@@ -163,7 +163,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['modify_feedback_id'])
 |--------------------------------------------------------------------------
 */
 $query = "SELECT feedback_id, created_at, category, type, title, description, status
-          FROM feedback
+          FROM app.feedback
           WHERE user_id = ?
           ORDER BY created_at DESC";
 

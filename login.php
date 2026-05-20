@@ -15,7 +15,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         echo "<script>alert('Invalid request. Please refresh the page and try again.');</script>";
     } else {
         $sql = "SELECT user_id, full_name, email, password_hash, role, failed_login_attempts, locked_until
-                FROM users
+                FROM app.users
                 WHERE email = ?";
 
         $params = [$email];
@@ -38,7 +38,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                 echo "<script>alert('Account temporarily locked. Please try again later.');</script>";
             } elseif (password_verify($password, $password_hash)) {
-                $resetSql = "UPDATE users 
+                $resetSql = "UPDATE app.users 
                              SET failed_login_attempts = 0, locked_until = NULL 
                              WHERE user_id = ?";
 
@@ -68,7 +68,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $remaining = $maxAttempts - $failed_attempts;
 
                 if ($failed_attempts >= $maxAttempts) {
-                    $updateSql = "UPDATE users
+                    $updateSql = "UPDATE app.users
                                   SET failed_login_attempts = ?, 
                                       locked_until = DATEADD(MINUTE, ?, GETDATE())
                                   WHERE user_id = ?";
@@ -84,7 +84,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                     echo "<script>alert('Too many failed login attempts. Account locked for {$lockoutMinutes} minutes.');</script>";
                 } else {
-                    $updateSql = "UPDATE users 
+                    $updateSql = "UPDATE app.users 
                                   SET failed_login_attempts = ? 
                                   WHERE user_id = ?";
 

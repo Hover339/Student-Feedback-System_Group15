@@ -43,8 +43,8 @@ if (!in_array($actionFilter, $allowedActions, true)) {
 
 // Build SQL Server query safely
 $query = "SELECT a.log_id, u.email, a.action, a.details, a.created_at
-          FROM audit_logs a
-          LEFT JOIN users u ON a.user_id = u.user_id";
+          FROM security.audit_logs a
+          LEFT JOIN app.users u ON a.user_id = u.user_id";
 
 $conditions = [];
 $params = [];
@@ -85,6 +85,12 @@ if ($stmt) {
             'created_at' => $row['created_at']
         ];
     }
+} else {
+    echo "<h3>SQL Server Error while loading audit logs:</h3>";
+    echo "<pre>";
+    print_r(sqlsrv_errors());
+    echo "</pre>";
+    exit();
 }
 ?>
 
@@ -350,7 +356,7 @@ if ($stmt) {
     <a href="admin_dashboard.php" class="back-link">← Back to Dashboard</a>
 
     <h1>Platform Audit Logs</h1>
-    <div class="subtitle">System compliance tracking trail. Records of operational and security-related events.</div>
+    <div class="subtitle">Application-level audit logs stored in the security schema.</div>
 
     <form method="post" class="filter-form">
         <div class="filter-row">
