@@ -3,16 +3,25 @@ session_start();
 include 'db.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
-    //ADDed UNAUTHORIZED_ACCESS event to audit logs
-    if(isset($_SESSION['user_id'])) {
-        logEvent($conn, $_SESSION['user_id'], 'UNAUTHORIZED_ACCESS', "User tried to access student dashboard without permission.");
+    if (isset($_SESSION['user_id'])) {
+        logEvent(
+            $conn,
+            $_SESSION['user_id'],
+            'UNAUTHORIZED_ACCESS',
+            "User tried to access student dashboard without permission."
+        );
     }
+
     header("Location: login.php");
     exit();
 }
 
-//ADDed DASHBOARD_ACCESS event to audit logs
-logEvent($conn, $_SESSION['user_id'], 'DASHBOARD_ACCESS', "Student accessed their dashboard.");
+logEvent(
+    $conn,
+    $_SESSION['user_id'],
+    'DASHBOARD_ACCESS',
+    "Student accessed their dashboard."
+);
 ?>
 
 <!DOCTYPE html>

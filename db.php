@@ -1,43 +1,41 @@
 <?php
-$host = "localhost";
-$user = "root";
-$password = "";
-$database = "student_feedback_system";
+$serverName = "localhost";
 
-$conn = new mysqli($host, $user, $password, $database);
+$connectionOptions = [
+    "Database" => "StudentFeedbackSystem",
+    "TrustServerCertificate" => true,
+    "CharacterSet" => "UTF-8",
+    "ReturnDatesAsStrings" => true
+];
 
-if ($conn->connect_error) {
-    die("Database connection failed: " . $conn->connect_error);
+$conn = sqlsrv_connect($serverName, $connectionOptions);
+
+if (!$conn) {
+    die("SQL Server connection failed:<br>" . print_r(sqlsrv_errors(), true));
 }
 
 /*
 |--------------------------------------------------------------------------
 | Audit Log Function
 |--------------------------------------------------------------------------
-| Used to record important user/admin/security actions.
-|--------------------------------------------------------------------------
 */
 function logEvent($conn, $user_id, $action, $details) {
-    $stmt = $conn->prepare("INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)");
+    $sql = "INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)";
 
-    if (!$stmt) {
-        return false;
-    }
+    $params = [
+        !empty($user_id) ? intval($user_id) : null,
+        $action,
+        $details
+    ];
 
-    $db_user_id = (!empty($user_id)) ? intval($user_id) : null;
+    $stmt = sqlsrv_query($conn, $sql, $params);
 
-    $stmt->bind_param("iss", $db_user_id, $action, $details);
-    $result = $stmt->execute();
-    $stmt->close();
-
-    return $result;
+    return $stmt !== false;
 }
 
 /*
 |--------------------------------------------------------------------------
 | CSRF Token Helpers
-|--------------------------------------------------------------------------
-| Protects forms from Cross-Site Request Forgery attacks.
 |--------------------------------------------------------------------------
 */
 function generateCsrfToken() {
@@ -66,13 +64,9 @@ function validateCsrfToken($token) {
 |--------------------------------------------------------------------------
 | Field-Level Encryption Helpers
 |--------------------------------------------------------------------------
-| Used to protect sensitive database fields such as:
+| Used to protect sensitive database fields:
 | - feedback.description
 | - feedback.admin_response
-|
-| Note:
-| For local assignment testing, the key is stored here for simplicity.
-| In production, store the key outside the web root or in environment variables.
 |--------------------------------------------------------------------------
 */
 define('APP_ENCRYPTION_KEY', 'student_feedback_system_local_demo_key_2026_change_in_production');
@@ -147,10 +141,7 @@ function decryptSensitiveData($storedValue) {
 |--------------------------------------------------------------------------
 | Dynamic Data Masking Helper
 |--------------------------------------------------------------------------
-| Used to mask email addresses before displaying them in pages such as audit logs.
-|
-| Example:
-| student123@gmail.com → s********3@gmail.com
+| Masks email addresses before displaying them in PHP pages.
 |--------------------------------------------------------------------------
 */
 function maskEmail($email) {

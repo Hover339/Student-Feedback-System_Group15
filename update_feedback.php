@@ -2,7 +2,7 @@
 session_start();
 include 'db.php';
 
-// Session check: only admin can access this page
+// Admin-only access check
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: login.php');
     exit();
@@ -11,6 +11,11 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 $message = '';
 $allowedStatuses = ['Pending', 'In Progress', 'Resolved', 'Rejected'];
 
+/*
+|--------------------------------------------------------------------------
+| Handle feedback status/response update
+|--------------------------------------------------------------------------
+*/
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_id'], $_POST['status'])) {
     $csrf_token = $_POST['csrf_token'] ?? '';
 
@@ -23,30 +28,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_id'], $_POST
         $new_response_plain = isset($_POST['admin_response']) ? trim($_POST['admin_response']) : '';
 
         if ($feedback_id > 0 && in_array($new_status, $allowedStatuses, true)) {
-            $selectStmt = $conn->prepare('SELECT status, admin_response FROM feedback WHERE feedback_id = ?');
-            $selectStmt->bind_param('i', $feedback_id);
-            $selectStmt->execute();
-            $selectStmt->bind_result($current_status, $current_response_encrypted);
+            $selectSql = "SELECT status, admin_response 
+                          FROM feedback 
+                          WHERE feedback_id = ?";
 
-            if ($selectStmt->fetch()) {
-                $selectStmt->close();
+            $selectStmt = sqlsrv_query($conn, $selectSql, [$feedback_id]);
 
-                $current_response_plain = decryptSensitiveData($current_response_encrypted);
-                $current_response_str = $current_response_plain ?? '';
-                $needsUpdate = ($current_status !== $new_status) || ($current_response_str !== $new_response_plain);
+            $current = null;
+
+            if ($selectStmt) {
+                $current = sqlsrv_fetch_array($selectStmt, SQLSRV_FETCH_ASSOC);
+            }
+
+            if ($current) {
+                $current_status = $current['status'];
+                $current_response_plain = decryptSensitiveData($current['admin_response']);
+
+                $needsUpdate = ($current_status !== $new_status) || (($current_response_plain ?? '') !== $new_response_plain);
 
                 if ($needsUpdate) {
                     $db_response = ($new_response_plain === '') ? null : encryptSensitiveData($new_response_plain);
 
-                    $updateStmt = $conn->prepare(
-                        'UPDATE feedback 
-                         SET status = ?, admin_response = ?, updated_at = NOW() 
-                         WHERE feedback_id = ?'
-                    );
+                    $updateSql = "UPDATE feedback
+                                  SET status = ?, 
+                                      admin_response = ?, 
+                                      updated_at = GETDATE()
+                                  WHERE feedback_id = ?";
 
-                    $updateStmt->bind_param('ssi', $new_status, $db_response, $feedback_id);
+                    $updateStmt = sqlsrv_query($conn, $updateSql, [
+                        $new_status,
+                        $db_response,
+                        $feedback_id
+                    ]);
 
-                    if ($updateStmt->execute()) {
+                    if ($updateStmt) {
                         logEvent(
                             $conn,
                             $_SESSION['user_id'],
@@ -58,17 +73,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_id'], $_POST
                     } else {
                         $message = 'Unable to update feedback at this time.';
                     }
-
-                    $updateStmt->close();
                 } else {
                     $message = 'No changes were made because status and response are unchanged.';
                 }
             } else {
                 $message = 'Feedback entry not found.';
-
-                if ($selectStmt) {
-                    $selectStmt->close();
-                }
             }
         } else {
             $message = 'Invalid feedback ID or status provided.';
@@ -76,12 +85,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_id'], $_POST
     }
 }
 
-// Log admin viewing full feedback management list
-$countResult = $conn->query("SELECT COUNT(*) AS total FROM feedback");
+/*
+|--------------------------------------------------------------------------
+| Log admin viewing full feedback management list
+|--------------------------------------------------------------------------
+*/
+$countSql = "SELECT COUNT(*) AS total FROM feedback";
+$countStmt = sqlsrv_query($conn, $countSql);
+
 $totalFeedback = 0;
 
-if ($countResult && $row = $countResult->fetch_assoc()) {
-    $totalFeedback = (int)$row['total'];
+if ($countStmt) {
+    $countRow = sqlsrv_fetch_array($countStmt, SQLSRV_FETCH_ASSOC);
+    if ($countRow) {
+        $totalFeedback = intval($countRow['total']);
+    }
 }
 
 logEvent(
@@ -91,45 +109,27 @@ logEvent(
     "Admin viewed the full feedback management list. Total records available: {$totalFeedback}"
 );
 
+/*
+|--------------------------------------------------------------------------
+| Fetch all feedback records for admin table
+|--------------------------------------------------------------------------
+*/
 $feedbackItems = [];
 
-$feedbackQuery = $conn->prepare(
-    'SELECT feedback_id, user_id, title, description, category, type, status, admin_response, created_at, updated_at 
-     FROM feedback 
-     ORDER BY created_at DESC'
-);
+$feedbackSql = "SELECT feedback_id, user_id, title, description, category, type, status, admin_response, created_at, updated_at
+                FROM feedback
+                ORDER BY created_at DESC";
 
-$feedbackQuery->execute();
+$feedbackStmt = sqlsrv_query($conn, $feedbackSql);
 
-$feedbackQuery->bind_result(
-    $feedback_id,
-    $user_id,
-    $title,
-    $description,
-    $category,
-    $type,
-    $status,
-    $admin_response,
-    $created_at,
-    $updated_at
-);
+if ($feedbackStmt) {
+    while ($row = sqlsrv_fetch_array($feedbackStmt, SQLSRV_FETCH_ASSOC)) {
+        $row['description'] = decryptSensitiveData($row['description']);
+        $row['admin_response'] = decryptSensitiveData($row['admin_response']);
 
-while ($feedbackQuery->fetch()) {
-    $feedbackItems[] = [
-        'feedback_id' => $feedback_id,
-        'user_id' => $user_id,
-        'title' => $title,
-        'description' => decryptSensitiveData($description),
-        'category' => $category,
-        'type' => $type,
-        'status' => $status,
-        'admin_response' => decryptSensitiveData($admin_response),
-        'created_at' => $created_at,
-        'updated_at' => $updated_at,
-    ];
+        $feedbackItems[] = $row;
+    }
 }
-
-$feedbackQuery->close();
 
 $csrfToken = generateCsrfToken();
 ?>
@@ -304,10 +304,25 @@ $csrfToken = generateCsrfToken();
             margin-top: 4px;
         }
 
-        .status-Pending { background: #fff3cd; color: #856404; }
-        .status-In-Progress { background: #cce5ff; color: #004085; }
-        .status-Resolved { background: #d4edda; color: #155724; }
-        .status-Rejected { background: #f8d7da; color: #721c24; }
+        .status-Pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-In-Progress {
+            background: #cce5ff;
+            color: #004085;
+        }
+
+        .status-Resolved {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-Rejected {
+            background: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
 
@@ -368,11 +383,16 @@ $csrfToken = generateCsrfToken();
                         </td>
 
                         <td><?php echo htmlspecialchars($item['feedback_id']); ?></td>
+
                         <td><?php echo htmlspecialchars($item['user_id']); ?></td>
 
-                        <td><strong><?php echo htmlspecialchars($item['title']); ?></strong></td>
+                        <td>
+                            <strong><?php echo htmlspecialchars($item['title']); ?></strong>
+                        </td>
 
-                        <td><small><?php echo nl2br(htmlspecialchars($item['description'])); ?></small></td>
+                        <td>
+                            <small><?php echo nl2br(htmlspecialchars($item['description'])); ?></small>
+                        </td>
 
                         <td><?php echo htmlspecialchars($item['category'] ?? 'N/A'); ?></td>
 
@@ -424,3 +444,7 @@ $csrfToken = generateCsrfToken();
 
 </body>
 </html>
+
+<?php
+sqlsrv_close($conn);
+?>

@@ -8,51 +8,84 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 
 $totalSubmissions = 0;
+
 $statusCounts = [
     'Pending' => 0,
     'In Progress' => 0,
     'Resolved' => 0,
     'Rejected' => 0,
 ];
+
 $categoryCounts = [];
+
 $typeCounts = [
     'Complaint' => 0,
     'Suggestion' => 0,
     'Feedback' => 0,
 ];
 
+/*
+|--------------------------------------------------------------------------
+| Total submissions
+|--------------------------------------------------------------------------
+*/
 $totalSql = "SELECT COUNT(*) AS total FROM feedback";
-$totalResult = $conn->query($totalSql);
-if ($totalResult && $row = $totalResult->fetch_assoc()) {
-    $totalSubmissions = (int) $row['total'];
+$totalResult = sqlsrv_query($conn, $totalSql);
+
+if ($totalResult) {
+    $row = sqlsrv_fetch_array($totalResult, SQLSRV_FETCH_ASSOC);
+
+    if ($row) {
+        $totalSubmissions = intval($row['total']);
+    }
 }
 
+/*
+|--------------------------------------------------------------------------
+| Status breakdown
+|--------------------------------------------------------------------------
+*/
 $statusSql = "SELECT status, COUNT(*) AS count FROM feedback GROUP BY status";
-$statusResult = $conn->query($statusSql);
+$statusResult = sqlsrv_query($conn, $statusSql);
+
 if ($statusResult) {
-    while ($row = $statusResult->fetch_assoc()) {
+    while ($row = sqlsrv_fetch_array($statusResult, SQLSRV_FETCH_ASSOC)) {
         $status = $row['status'];
+
         if (isset($statusCounts[$status])) {
-            $statusCounts[$status] = (int) $row['count'];
+            $statusCounts[$status] = intval($row['count']);
         }
     }
 }
 
+/*
+|--------------------------------------------------------------------------
+| Category breakdown
+|--------------------------------------------------------------------------
+*/
 $categorySql = "SELECT category, COUNT(*) AS count FROM feedback GROUP BY category";
-$categoryResult = $conn->query($categorySql);
+$categoryResult = sqlsrv_query($conn, $categorySql);
+
 if ($categoryResult) {
-    while ($row = $categoryResult->fetch_assoc()) {
-        $categoryCounts[$row['category']] = (int) $row['count'];
+    while ($row = sqlsrv_fetch_array($categoryResult, SQLSRV_FETCH_ASSOC)) {
+        $categoryCounts[$row['category']] = intval($row['count']);
     }
 }
 
+/*
+|--------------------------------------------------------------------------
+| Type breakdown
+|--------------------------------------------------------------------------
+*/
 $typeSql = "SELECT type, COUNT(*) AS count FROM feedback GROUP BY type";
-$typeResult = $conn->query($typeSql);
+$typeResult = sqlsrv_query($conn, $typeSql);
+
 if ($typeResult) {
-    while ($row = $typeResult->fetch_assoc()) {
+    while ($row = sqlsrv_fetch_array($typeResult, SQLSRV_FETCH_ASSOC)) {
         $type = $row['type'];
+
         if (isset($typeCounts[$type])) {
-            $typeCounts[$type] = (int) $row['count'];
+            $typeCounts[$type] = intval($row['count']);
         }
     }
 }
@@ -63,6 +96,7 @@ if ($typeResult) {
 <head>
     <meta charset="UTF-8">
     <title>View Reports</title>
+
     <style>
         body {
             margin: 0;
@@ -139,6 +173,19 @@ if ($typeResult) {
             margin: 10px 0 24px;
             color: #555;
             line-height: 1.6;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #2196F3;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
         }
 
         .kpi-grid {
@@ -222,112 +269,120 @@ if ($typeResult) {
                 grid-template-columns: 1fr;
             }
         }
-
-        .back-link {
-            display: inline-block;
-            margin-bottom: 20px;
-            color: #2196F3;
-            text-decoration: none;
-            font-weight: bold;
-            font-size: 14px;
-        }
-
-        .back-link:hover {
-            text-decoration: underline;
-        }
-
     </style>
 </head>
+
 <body>
-    <div class="navbar">
-        <h2>Admin Reports</h2>
-        <div class="nav-links">
-            <a class="nav-link" href="admin_dashboard.php">Dashboard</a>
-            <a class="logout" href="logout.php">Logout</a>
-        </div>
+
+<div class="navbar">
+    <h2>Admin Reports</h2>
+    <div class="nav-links">
+        <a class="nav-link" href="admin_dashboard.php">Dashboard</a>
+        <a class="nav-link" href="update_feedback.php">Manage Feedback</a>
+        <a class="nav-link" href="audit_logs.php">Audit Logs</a>
+        <a class="logout" href="logout.php">Logout</a>
     </div>
+</div>
 
-    <div class="page-wrapper">
-        <div class="report-card">
-            <a href="admin_dashboard.php" class="back-link">← Back to Dashboard</a>
+<div class="page-wrapper">
+    <div class="report-card">
+        <a href="admin_dashboard.php" class="back-link">← Back to Dashboard</a>
 
-            <h1>Feedback Summary</h1>
-            <p>Review total submission volume, status performance, and category/type distributions for feedback received through the student feedback system.</p>
+        <h1>Feedback Summary</h1>
+        <p>
+            Review total submission volume, status performance, and category/type distributions
+            for feedback received through the student feedback system.
+        </p>
 
-            <div class="kpi-grid">
-                <div class="kpi-card">
-                    <span class="label">Total Submissions</span>
-                    <span class="value"><?php echo $totalSubmissions; ?></span>
-                    <span class="detail">Overall number of feedback records.</span>
-                </div>
-                <div class="kpi-card">
-                    <span class="label">Pending</span>
-                    <span class="value"><?php echo $statusCounts['Pending']; ?></span>
-                    <span class="detail">Feedback entries awaiting review.</span>
-                </div>
-                <div class="kpi-card">
-                    <span class="label">In Progress</span>
-                    <span class="value"><?php echo $statusCounts['In Progress']; ?></span>
-                    <span class="detail">Submissions currently being addressed.</span>
-                </div>
-                <div class="kpi-card">
-                    <span class="label">Resolved</span>
-                    <span class="value"><?php echo $statusCounts['Resolved']; ?></span>
-                    <span class="detail">Resolved feedback items.</span>
-                </div>
-                <div class="kpi-card">
-                    <span class="label">Rejected</span>
-                    <span class="value"><?php echo $statusCounts['Rejected']; ?></span>
-                    <span class="detail">Feedback marked as rejected.</span>
-                </div>
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <span class="label">Total Submissions</span>
+                <span class="value"><?php echo $totalSubmissions; ?></span>
+                <span class="detail">Overall number of feedback records.</span>
             </div>
 
-            <div class="summary-section">
-                <div>
-                    <div class="summary-label">Category Breakdown</div>
-                    <table class="summary-table">
-                        <thead>
-                            <tr>
-                                <th>Category</th>
-                                <th>Count</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (count($categoryCounts) === 0): ?>
-                                <tr><td colspan="2">No category data available.</td></tr>
-                            <?php else: ?>
-                                <?php foreach ($categoryCounts as $category => $count): ?>
-                                    <tr>
-                                        <td><?php echo htmlspecialchars($category, ENT_QUOTES, 'UTF-8'); ?></td>
-                                        <td><?php echo $count; ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+            <div class="kpi-card">
+                <span class="label">Pending</span>
+                <span class="value"><?php echo $statusCounts['Pending']; ?></span>
+                <span class="detail">Feedback entries awaiting review.</span>
+            </div>
 
-                <div>
-                    <div class="summary-label">Type Breakdown</div>
-                    <table class="summary-table">
-                        <thead>
+            <div class="kpi-card">
+                <span class="label">In Progress</span>
+                <span class="value"><?php echo $statusCounts['In Progress']; ?></span>
+                <span class="detail">Submissions currently being addressed.</span>
+            </div>
+
+            <div class="kpi-card">
+                <span class="label">Resolved</span>
+                <span class="value"><?php echo $statusCounts['Resolved']; ?></span>
+                <span class="detail">Resolved feedback items.</span>
+            </div>
+
+            <div class="kpi-card">
+                <span class="label">Rejected</span>
+                <span class="value"><?php echo $statusCounts['Rejected']; ?></span>
+                <span class="detail">Feedback marked as rejected.</span>
+            </div>
+        </div>
+
+        <div class="summary-section">
+            <div>
+                <div class="summary-label">Category Breakdown</div>
+
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Count</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        <?php if (count($categoryCounts) === 0): ?>
                             <tr>
-                                <th>Type</th>
-                                <th>Count</th>
+                                <td colspan="2">No category data available.</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($typeCounts as $type => $count): ?>
+                        <?php else: ?>
+                            <?php foreach ($categoryCounts as $category => $count): ?>
                                 <tr>
-                                    <td><?php echo htmlspecialchars($type, ENT_QUOTES, 'UTF-8'); ?></td>
+                                    <td><?php echo htmlspecialchars($category, ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td><?php echo $count; ?></td>
                                 </tr>
                             <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <div>
+                <div class="summary-label">Type Breakdown</div>
+
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Count</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        <?php foreach ($typeCounts as $type => $count): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($type, ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo $count; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
+</div>
+
 </body>
 </html>
+
+<?php
+sqlsrv_close($conn);
+?>

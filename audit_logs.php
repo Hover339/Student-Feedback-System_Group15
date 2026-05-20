@@ -41,29 +41,27 @@ if (!in_array($actionFilter, $allowedActions, true)) {
     $actionFilter = 'all';
 }
 
-// Build query safely
-$query = "SELECT a.log_id, u.email, a.action, a.details, a.created_at 
-          FROM audit_logs a 
+// Build SQL Server query safely
+$query = "SELECT a.log_id, u.email, a.action, a.details, a.created_at
+          FROM audit_logs a
           LEFT JOIN users u ON a.user_id = u.user_id";
 
 $conditions = [];
 $params = [];
-$types = "";
 
 // Time filter condition
 if ($filter === 'today') {
-    $conditions[] = "a.created_at >= CURDATE()";
+    $conditions[] = "a.created_at >= CAST(GETDATE() AS DATE)";
 } elseif ($filter === 'week') {
-    $conditions[] = "a.created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+    $conditions[] = "a.created_at >= DATEADD(DAY, -7, GETDATE())";
 } elseif ($filter === 'month') {
-    $conditions[] = "a.created_at >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
+    $conditions[] = "a.created_at >= DATEADD(MONTH, -1, GETDATE())";
 }
 
 // Action filter condition
 if ($actionFilter !== 'all') {
     $conditions[] = "a.action = ?";
     $params[] = $actionFilter;
-    $types .= "s";
 }
 
 // Add WHERE if needed
@@ -75,27 +73,18 @@ $query .= " ORDER BY a.created_at DESC";
 
 // Execute query
 $logs = [];
-$stmt = $conn->prepare($query);
+$stmt = sqlsrv_query($conn, $query, $params);
 
 if ($stmt) {
-    if (!empty($params)) {
-        $stmt->bind_param($types, ...$params);
-    }
-
-    $stmt->execute();
-    $stmt->bind_result($log_id, $user_email, $action, $details, $created_at);
-
-    while ($stmt->fetch()) {
+    while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
         $logs[] = [
-            'log_id'     => $log_id,
-            'email'      => $user_email ?? 'System / Guest',
-            'action'     => $action,
-            'details'    => $details,
-            'created_at' => $created_at
+            'log_id'     => $row['log_id'],
+            'email'      => $row['email'] ?? 'System / Guest',
+            'action'     => $row['action'],
+            'details'    => $row['details'],
+            'created_at' => $row['created_at']
         ];
     }
-
-    $stmt->close();
 }
 ?>
 
@@ -488,3 +477,7 @@ if ($stmt) {
 
 </body>
 </html>
+
+<?php
+sqlsrv_close($conn);
+?>

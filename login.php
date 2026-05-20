@@ -14,64 +14,100 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         logEvent($conn, null, 'CSRF_FAILED', "Invalid CSRF token during login attempt for: {$email}");
         echo "<script>alert('Invalid request. Please refresh the page and try again.');</script>";
     } else {
-        $stmt = $conn->prepare("SELECT user_id, full_name, email, password_hash, role, failed_login_attempts, locked_until FROM users WHERE email = ?");
-        $stmt->bind_param("s", $email);
-        $stmt->execute();
-        $stmt->bind_result($user_id, $full_name, $db_email, $password_hash, $role, $failed_attempts, $locked_until);
+        $sql = "SELECT user_id, full_name, email, password_hash, role, failed_login_attempts, locked_until
+                FROM users
+                WHERE email = ?";
 
-        if ($stmt->fetch()) {
-            $stmt->close();
+        $params = [$email];
+        $stmt = sqlsrv_query($conn, $sql, $params);
+
+        if ($stmt && ($user = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC))) {
+            $user_id = intval($user['user_id']);
+            $password_hash = $user['password_hash'];
+            $role = $user['role'];
+            $failed_attempts = intval($user['failed_login_attempts']);
+            $locked_until = $user['locked_until'];
 
             if (!empty($locked_until) && strtotime($locked_until) > time()) {
-                logEvent($conn, $user_id, 'LOGIN_LOCKED', "Blocked login attempt because account is locked for: {$email}");
+                logEvent(
+                    $conn,
+                    $user_id,
+                    'LOGIN_LOCKED',
+                    "Blocked login attempt because account is locked for: {$email}"
+                );
+
                 echo "<script>alert('Account temporarily locked. Please try again later.');</script>";
             } elseif (password_verify($password, $password_hash)) {
-                $resetStmt = $conn->prepare("UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = ?");
-                $resetStmt->bind_param("i", $user_id);
-                $resetStmt->execute();
-                $resetStmt->close();
+                $resetSql = "UPDATE users 
+                             SET failed_login_attempts = 0, locked_until = NULL 
+                             WHERE user_id = ?";
+
+                sqlsrv_query($conn, $resetSql, [$user_id]);
 
                 session_regenerate_id(true);
+
                 $_SESSION['user_id'] = $user_id;
                 $_SESSION['role'] = $role;
 
-                logEvent($conn, $user_id, 'USER_LOGIN', "Successful login event for user identity: {$email}");
+                logEvent(
+                    $conn,
+                    $user_id,
+                    'USER_LOGIN',
+                    "Successful login event for user identity: {$email}"
+                );
 
                 if ($role == 'admin') {
                     header("Location: admin_dashboard.php");
                 } else {
                     header("Location: student_dashboard.php");
                 }
+
                 exit();
             } else {
                 $failed_attempts++;
-                $new_locked_until = null;
+                $remaining = $maxAttempts - $failed_attempts;
 
                 if ($failed_attempts >= $maxAttempts) {
-                    $new_locked_until = date("Y-m-d H:i:s", strtotime("+{$lockoutMinutes} minutes"));
+                    $updateSql = "UPDATE users
+                                  SET failed_login_attempts = ?, 
+                                      locked_until = DATEADD(MINUTE, ?, GETDATE())
+                                  WHERE user_id = ?";
 
-                    $updateStmt = $conn->prepare("UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE user_id = ?");
-                    $updateStmt->bind_param("isi", $failed_attempts, $new_locked_until, $user_id);
-                    $updateStmt->execute();
-                    $updateStmt->close();
+                    sqlsrv_query($conn, $updateSql, [$failed_attempts, $lockoutMinutes, $user_id]);
 
-                    logEvent($conn, $user_id, 'ACCOUNT_LOCKED', "Account locked after {$failed_attempts} failed login attempts for: {$email}");
+                    logEvent(
+                        $conn,
+                        $user_id,
+                        'ACCOUNT_LOCKED',
+                        "Account locked after {$failed_attempts} failed login attempts for: {$email}"
+                    );
+
                     echo "<script>alert('Too many failed login attempts. Account locked for {$lockoutMinutes} minutes.');</script>";
                 } else {
-                    $updateStmt = $conn->prepare("UPDATE users SET failed_login_attempts = ? WHERE user_id = ?");
-                    $updateStmt->bind_param("ii", $failed_attempts, $user_id);
-                    $updateStmt->execute();
-                    $updateStmt->close();
+                    $updateSql = "UPDATE users 
+                                  SET failed_login_attempts = ? 
+                                  WHERE user_id = ?";
 
-                    $remaining = $maxAttempts - $failed_attempts;
-                    logEvent($conn, $user_id, 'LOGIN_FAILED', "Incorrect password for account: {$email}. Remaining attempts: {$remaining}");
+                    sqlsrv_query($conn, $updateSql, [$failed_attempts, $user_id]);
+
+                    logEvent(
+                        $conn,
+                        $user_id,
+                        'LOGIN_FAILED',
+                        "Incorrect password for account: {$email}. Remaining attempts: {$remaining}"
+                    );
+
                     echo "<script>alert('Invalid password. Remaining attempts: {$remaining}');</script>";
                 }
             }
         } else {
-            $stmt->close();
+            logEvent(
+                $conn,
+                null,
+                'LOGIN_FAILED',
+                "Failed login attempt. Account does not exist: {$email}"
+            );
 
-            logEvent($conn, null, 'LOGIN_FAILED', "Failed login attempt. Account does not exist: {$email}");
             echo "<script>alert('User not found');</script>";
         }
     }

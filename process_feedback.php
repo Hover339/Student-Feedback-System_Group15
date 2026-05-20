@@ -2,11 +2,6 @@
 session_start();
 include 'db.php';
 
-// Show errors during development/testing
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
 // Student-only access check
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'student') {
     http_response_code(403);
@@ -31,27 +26,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     | Rate Limit Check
     |--------------------------------------------------------------------------
     | Student can only submit 1 feedback within 5 minutes.
-    | This helps reduce spam submissions and basic DoS-style abuse.
     |--------------------------------------------------------------------------
     */
-    $rateLimitStmt = $conn->prepare(
-        "SELECT COUNT(*) 
-         FROM feedback 
-         WHERE user_id = ? 
-         AND created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)"
-    );
+    $rateLimitSql = "SELECT COUNT(*) AS recent_count
+                     FROM feedback
+                     WHERE user_id = ?
+                     AND created_at >= DATEADD(MINUTE, -5, GETDATE())";
+
+    $rateLimitStmt = sqlsrv_query($conn, $rateLimitSql, [$user_id]);
 
     if (!$rateLimitStmt) {
         http_response_code(500);
-        echo "Database Error: Failed to prepare rate limit check.";
+        echo "Database Error: Failed to check rate limit.";
         exit();
     }
 
-    $rateLimitStmt->bind_param("i", $user_id);
-    $rateLimitStmt->execute();
-    $rateLimitStmt->bind_result($recentSubmissionCount);
-    $rateLimitStmt->fetch();
-    $rateLimitStmt->close();
+    $rateRow = sqlsrv_fetch_array($rateLimitStmt, SQLSRV_FETCH_ASSOC);
+    $recentSubmissionCount = $rateRow ? intval($rateRow['recent_count']) : 0;
 
     if ($recentSubmissionCount >= 1) {
         logEvent(
@@ -94,25 +85,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $status = 'Pending';
 
-    // Encrypt sensitive feedback description before saving into database
+    // Encrypt sensitive feedback description before saving into SQL Server
     $encryptedDescription = encryptSensitiveData($description);
 
-    $query = "INSERT INTO feedback 
-              (user_id, title, description, category, type, status, created_at, updated_at) 
-              VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
+    $insertSql = "INSERT INTO feedback 
+                  (user_id, title, description, category, type, status, created_at, updated_at)
+                  OUTPUT INSERTED.feedback_id
+                  VALUES (?, ?, ?, ?, ?, ?, GETDATE(), GETDATE())";
 
-    $stmt = $conn->prepare($query);
+    $params = [
+        $user_id,
+        $title,
+        $encryptedDescription,
+        $category,
+        $type,
+        $status
+    ];
 
-    if (!$stmt) {
-        http_response_code(500);
-        echo "Database Error: Failed to prepare statement. " . $conn->error;
-        exit();
-    }
+    $stmt = sqlsrv_query($conn, $insertSql, $params);
 
-    $stmt->bind_param("isssss", $user_id, $title, $encryptedDescription, $category, $type, $status);
-
-    if ($stmt->execute()) {
-        $new_feedback_id = $conn->insert_id;
+    if ($stmt && ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_NUMERIC))) {
+        $new_feedback_id = intval($row[0]);
 
         logEvent(
             $conn,
@@ -124,14 +117,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo "Success";
     } else {
         http_response_code(500);
-        echo "Database Error: Failed to submit feedback. " . $stmt->error;
+        echo "Database Error: Failed to submit feedback.";
     }
-
-    $stmt->close();
 } else {
     http_response_code(405);
     echo "Method Not Allowed";
 }
 
-$conn->close();
+sqlsrv_close($conn);
 ?>

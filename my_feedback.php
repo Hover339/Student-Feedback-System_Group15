@@ -2,11 +2,6 @@
 session_start();
 include 'db.php';
 
-// Show errors during development/testing
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
 // Student-only access check
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'student') {
     header("Location: login.php");
@@ -35,20 +30,22 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['delete_feedback_id'])
         logEvent($conn, $user_id, 'CSRF_FAILED', 'Invalid CSRF token during feedback deletion.');
         $message = "Invalid request. Please refresh the page and try again.";
     } else {
-        $checkStmt = $conn->prepare("SELECT title FROM feedback WHERE feedback_id = ? AND user_id = ?");
-        $checkStmt->bind_param("ii", $feedback_id, $user_id);
-        $checkStmt->execute();
-        $checkResult = $checkStmt->get_result();
-        $feedback = $checkResult->fetch_assoc();
-        $checkStmt->close();
+        $checkSql = "SELECT title FROM feedback WHERE feedback_id = ? AND user_id = ?";
+        $checkStmt = sqlsrv_query($conn, $checkSql, [$feedback_id, $user_id]);
+
+        $feedback = null;
+
+        if ($checkStmt) {
+            $feedback = sqlsrv_fetch_array($checkStmt, SQLSRV_FETCH_ASSOC);
+        }
 
         if ($feedback) {
             $feedbackTitle = $feedback['title'];
 
-            $deleteStmt = $conn->prepare("DELETE FROM feedback WHERE feedback_id = ? AND user_id = ?");
-            $deleteStmt->bind_param("ii", $feedback_id, $user_id);
+            $deleteSql = "DELETE FROM feedback WHERE feedback_id = ? AND user_id = ?";
+            $deleteStmt = sqlsrv_query($conn, $deleteSql, [$feedback_id, $user_id]);
 
-            if ($deleteStmt->execute()) {
+            if ($deleteStmt) {
                 logEvent(
                     $conn,
                     $user_id,
@@ -60,8 +57,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['delete_feedback_id'])
             } else {
                 $message = "Unable to delete feedback. Please try again.";
             }
-
-            $deleteStmt->close();
         } else {
             logEvent(
                 $conn,
@@ -102,12 +97,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['modify_feedback_id'])
         $message = "Title and description cannot be empty.";
     } else {
         // Check ownership and status before modifying
-        $checkStmt = $conn->prepare("SELECT title, status FROM feedback WHERE feedback_id = ? AND user_id = ?");
-        $checkStmt->bind_param("ii", $feedback_id, $user_id);
-        $checkStmt->execute();
-        $checkResult = $checkStmt->get_result();
-        $feedback = $checkResult->fetch_assoc();
-        $checkStmt->close();
+        $checkSql = "SELECT title, status FROM feedback WHERE feedback_id = ? AND user_id = ?";
+        $checkStmt = sqlsrv_query($conn, $checkSql, [$feedback_id, $user_id]);
+
+        $feedback = null;
+
+        if ($checkStmt) {
+            $feedback = sqlsrv_fetch_array($checkStmt, SQLSRV_FETCH_ASSOC);
+        }
 
         if (!$feedback) {
             logEvent(
@@ -123,23 +120,28 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['modify_feedback_id'])
         } else {
             $encryptedDescription = encryptSensitiveData($new_description);
 
-            $updateStmt = $conn->prepare(
-                "UPDATE feedback 
-                 SET type = ?, category = ?, title = ?, description = ?, updated_at = NOW()
-                 WHERE feedback_id = ? AND user_id = ? AND status = 'Pending'"
-            );
+            $updateSql = "UPDATE feedback
+                          SET type = ?, 
+                              category = ?, 
+                              title = ?, 
+                              description = ?, 
+                              updated_at = GETDATE()
+                          WHERE feedback_id = ? 
+                          AND user_id = ? 
+                          AND status = 'Pending'";
 
-            $updateStmt->bind_param(
-                "ssssii",
+            $updateParams = [
                 $new_type,
                 $new_category,
                 $new_title,
                 $encryptedDescription,
                 $feedback_id,
                 $user_id
-            );
+            ];
 
-            if ($updateStmt->execute()) {
+            $updateStmt = sqlsrv_query($conn, $updateSql, $updateParams);
+
+            if ($updateStmt) {
                 logEvent(
                     $conn,
                     $user_id,
@@ -151,8 +153,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['modify_feedback_id'])
             } else {
                 $message = "Unable to modify feedback. Please try again.";
             }
-
-            $updateStmt->close();
         }
     }
 }
@@ -162,15 +162,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['modify_feedback_id'])
 | Fetch Student Feedback
 |--------------------------------------------------------------------------
 */
-$query = "SELECT feedback_id, created_at, category, type, title, description, status 
-          FROM feedback 
-          WHERE user_id = ? 
+$query = "SELECT feedback_id, created_at, category, type, title, description, status
+          FROM feedback
+          WHERE user_id = ?
           ORDER BY created_at DESC";
 
-$stmt = $conn->prepare($query);
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$result = $stmt->get_result();
+$stmt = sqlsrv_query($conn, $query, [$user_id]);
+
+$feedbackRows = [];
+
+if ($stmt) {
+    while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        $feedbackRows[] = $row;
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -463,7 +468,7 @@ $result = $stmt->get_result();
         <div class="message"><?php echo htmlspecialchars($message); ?></div>
     <?php endif; ?>
 
-    <?php if ($result->num_rows > 0): ?>
+    <?php if (!empty($feedbackRows)): ?>
         <table>
             <thead>
                 <tr>
@@ -477,7 +482,7 @@ $result = $stmt->get_result();
             </thead>
 
             <tbody>
-                <?php while ($row = $result->fetch_assoc()): ?>
+                <?php foreach ($feedbackRows as $row): ?>
                     <?php
                         $decryptedDescription = decryptSensitiveData($row['description']);
                         $editBoxId = "edit-box-" . intval($row['feedback_id']);
@@ -501,7 +506,7 @@ $result = $stmt->get_result();
                         </td>
 
                         <td>
-                            <?php 
+                            <?php
                             $statusClass = "status-" . str_replace(" ", "-", $row['status']);
                             ?>
                             <span class="badge <?php echo htmlspecialchars($statusClass); ?>">
@@ -579,7 +584,7 @@ $result = $stmt->get_result();
                             <?php endif; ?>
                         </td>
                     </tr>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             </tbody>
         </table>
     <?php else: ?>
@@ -607,6 +612,5 @@ function toggleEditBox(id) {
 </html>
 
 <?php
-$stmt->close();
-$conn->close();
+sqlsrv_close($conn);
 ?>

@@ -16,20 +16,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     } else {
         $password = password_hash($plain_password, PASSWORD_DEFAULT);
 
-        $stmt = $conn->prepare("INSERT INTO users (full_name, email, password_hash, role) VALUES (?, ?, ?, 'student')");
-        $stmt->bind_param("sss", $name, $email, $password);
+        $sql = "INSERT INTO users (full_name, email, password_hash, role)
+                OUTPUT INSERTED.user_id
+                VALUES (?, ?, ?, 'student')";
 
-        if ($stmt->execute()) {
-            $new_user_id = $conn->insert_id;
+        $params = [$name, $email, $password];
 
-            logEvent($conn, $new_user_id, 'USER_REGISTERED', "New student account successfully created for: {$email}");
+        $stmt = sqlsrv_query($conn, $sql, $params);
+
+        if ($stmt && ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_NUMERIC))) {
+            $new_user_id = intval($row[0]);
+
+            logEvent(
+                $conn,
+                $new_user_id,
+                'USER_REGISTERED',
+                "New student account successfully created for: {$email}"
+            );
 
             echo "<script>alert('Registration successful!'); window.location='login.php';</script>";
         } else {
-            echo "<script>alert('Error: Email may already exist');</script>";
+            echo "<script>alert('Error: Email may already exist.');</script>";
         }
-
-        $stmt->close();
     }
 }
 
