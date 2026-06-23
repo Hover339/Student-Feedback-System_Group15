@@ -1,0 +1,11 @@
+# Nmap 7.93 scan initiated Tue Jun 23 06:31:06 2026 as: nmap -sV -Pn -oN nmap_ec2_scan.txt 100.27.44.0
+Nmap scan report for ec2-100-27-44-0.compute-1.amazonaws.com (100.27.44.0)
+Host is up (0.00074s latency).
+Not shown: 998 filtered tcp ports (no-response)
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.15 (Ubuntu Linux; protocol 2.0)
+80/tcp open  http    Apache httpd 2.4.52 ((Ubuntu))
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+# Nmap done at Tue Jun 23 06:31:19 2026 -- 1 IP address (1 host up) scanned in 12.68 seconds

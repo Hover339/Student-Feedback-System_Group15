@@ -1,0 +1,27 @@
+# Terraform internal files
+.terraform/
+.terraform.lock.hcl
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+terraform.tfstate
+terraform.tfstate.backup
+
+# Terraform variable files that may contain passwords/secrets
+terraform.tfvars
+*.tfvars
+
+# SSH key files
+student-feedback-key
+student-feedback-key.pub
+*.pem
+
+# Logs and crash files
+crash.log
+*.log
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/

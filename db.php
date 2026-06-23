@@ -13,21 +13,38 @@ if (session_status() === PHP_SESSION_NONE) {
 
 /*
 |--------------------------------------------------------------------------
+| Environment Helper
+|--------------------------------------------------------------------------
+| Allows the same code to run locally and on AWS.
+| If an environment variable is not set, it uses the local default value.
+|--------------------------------------------------------------------------
+*/
+function envValue($key, $default = null) {
+    $value = getenv($key);
+    return ($value !== false && $value !== '') ? $value : $default;
+}
+
+/*
+|--------------------------------------------------------------------------
 | SQL Server Database Connection
 |--------------------------------------------------------------------------
-| This connection uses a dedicated least-privilege SQL Server login:
-| student_feedback_app
+| Local default:
+|   localhost
 |
-| The login should be mapped to app_role in SQL Server.
+| AWS example:
+|   DB_HOST = your-rds-endpoint.ap-southeast-1.rds.amazonaws.com,1433
+|
+| This connection uses a dedicated least-privilege SQL Server login:
+|   student_feedback_app
 |--------------------------------------------------------------------------
 */
 
-$serverName = "localhost";
+$serverName = envValue('DB_HOST', 'localhost');
 
 $connectionOptions = [
-    "Database" => "StudentFeedbackSystem",
-    "Uid" => "student_feedback_app",
-    "PWD" => "StudentApp@12345",
+    "Database" => envValue('DB_NAME', 'StudentFeedbackSystem'),
+    "Uid" => envValue('DB_USER', 'student_feedback_app'),
+    "PWD" => envValue('DB_PASS', 'StudentApp@12345'),
     "TrustServerCertificate" => true,
     "CharacterSet" => "UTF-8",
     "ReturnDatesAsStrings" => true
@@ -38,8 +55,6 @@ $conn = sqlsrv_connect($serverName, $connectionOptions);
 if (!$conn) {
     die("SQL Server connection failed:<br>" . print_r(sqlsrv_errors(), true));
 }
-
-
 
 /*
 |--------------------------------------------------------------------------
@@ -72,6 +87,7 @@ $setRoleContextStmt = sqlsrv_query(
 if ($setRoleContextStmt === false) {
     die("Failed to set SQL Server ActiveUserRole session context:<br>" . print_r(sqlsrv_errors(), true));
 }
+
 /*
 |--------------------------------------------------------------------------
 | Audit Log Function
@@ -129,13 +145,15 @@ function validateCsrfToken($token) {
 | - app.feedback.description
 | - app.feedback.admin_response
 |
-| Note:
-| For assignment/local testing, the key is stored here for simplicity.
-| In production, store this key in environment variables or outside web root.
+| Local default key is provided for assignment testing.
+| On AWS, set APP_ENCRYPTION_KEY as an environment variable.
 |--------------------------------------------------------------------------
 */
 
-define('APP_ENCRYPTION_KEY', 'student_feedback_system_local_demo_key_2026_change_in_production');
+define(
+    'APP_ENCRYPTION_KEY',
+    envValue('APP_ENCRYPTION_KEY', 'student_feedback_system_local_demo_key_2026_change_in_production')
+);
 
 function getEncryptionKey() {
     return hash('sha256', APP_ENCRYPTION_KEY, true);
@@ -220,7 +238,7 @@ function decryptSensitiveData($storedValue) {
 | Dynamic Data Masking Helper
 |--------------------------------------------------------------------------
 | Masks email addresses before displaying them in PHP pages.
-| SQL Server Dynamic Data Masking is also applied at database level.
+| SQL Server Dynamic Data Masking may also be applied at database level.
 |--------------------------------------------------------------------------
 */
 function maskEmail($email) {
