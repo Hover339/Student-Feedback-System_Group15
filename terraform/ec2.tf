@@ -26,23 +26,41 @@ resource "aws_instance" "web" {
   key_name                    = aws_key_pair.web_key.key_name
   associate_public_ip_address = true
 
-  user_data = <<-EOF_SCRIPT
+  user_data = <<-EOF
     #!/bin/bash
-    apt-get update -y
-    apt-get install -y apache2 php libapache2-mod-php unzip git
-    systemctl enable apache2
-    systemctl start apache2
+    echo "EC2 created by Terraform" > /tmp/terraform-boot.txt
+  EOF
 
-    cat > /var/www/html/index.php <<'PHP'
-    <?php
-    echo "<h1>Student Feedback System - AWS Deployment</h1>";
-    echo "<p>EC2 web server is running successfully.</p>";
-    echo "<p>Deployed using Terraform.</p>";
-    ?>
-    PHP
+  connection {
+    type        = "ssh"
+    user        = "ubuntu"
+    private_key = file("${path.module}/student-feedback-key")
+    host        = self.public_ip
+  }
 
-    rm -f /var/www/html/index.html
-  EOF_SCRIPT
+  provisioner "file" {
+    source      = "${path.module}/user_data_student_feedback.sh"
+    destination = "/tmp/user_data_student_feedback.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x /tmp/user_data_student_feedback.sh",
+      "sudo bash /tmp/user_data_student_feedback.sh"
+    ]
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/frontend_polish.sh"
+    destination = "/tmp/frontend_polish.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x /tmp/frontend_polish.sh",
+      "sudo bash /tmp/frontend_polish.sh"
+    ]
+  }
 
   tags = {
     Name = "${var.project_name}-web-server"
